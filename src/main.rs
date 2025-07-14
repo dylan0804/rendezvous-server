@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
 
     // create a hashmap of clients
 
-    let mut clients = HashMap::<SocketAddr, ClientInfo>::new();
+    let mut clients = HashMap::<String, ClientInfo>::new();
     // create buffer
     let mut buf = [0; 1024];
     
@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
                 println!("Message type: {}", msg.msg_type);
                 match msg.msg_type.as_str() {
                     "register" => {
-                        clients.insert(msg.client_id.clone().parse::<SocketAddr>()?, ClientInfo { 
+                        clients.insert(msg.client_id.clone(), ClientInfo { 
                             client_addr, 
                             timestamp: Instant::now() 
                         });
@@ -79,7 +79,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn pair_clients(socket: &UdpSocket, clients: &HashMap<SocketAddr, ClientInfo>) -> Result<()> {
+async fn pair_clients(socket: &UdpSocket, clients: &HashMap<String, ClientInfo>) -> Result<()> {
     let client_list: Vec<_> = clients.iter().collect();
 
     if client_list.len() >= 2 {
@@ -102,8 +102,8 @@ async fn pair_clients(socket: &UdpSocket, clients: &HashMap<SocketAddr, ClientIn
         let msg1_data = serde_json::to_vec(&msg1)?; 
         let msg2_data = serde_json::to_vec(&msg2)?; 
 
-        socket.send_to(&msg1_data, id2).await?;
-        socket.send_to(&msg2_data, id1).await?;
+        socket.send_to(&msg1_data, info2.client_addr).await?;
+        socket.send_to(&msg2_data, info1.client_addr).await?;
 
         println!("Paired {} ({}) with {} ({})", id1, info1.client_addr, id2, info2.client_addr);
 
