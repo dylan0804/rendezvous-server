@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
         match serde_json::from_slice::<Message>(data) {
             Ok(msg) => {
                 println!("Received from {}: {:?}", client_addr, msg);
-
+                println!("Message type: {}", msg.msg_type);
                 match msg.msg_type.as_str() {
                     "register" => {
                         clients.insert(msg.client_id.clone().parse::<SocketAddr>()?, ClientInfo { 
@@ -106,6 +106,7 @@ async fn pair_clients(socket: &UdpSocket, clients: &HashMap<SocketAddr, ClientIn
         socket.send_to(&msg2_data, id1).await?;
 
         println!("Paired {} ({}) with {} ({})", id1, info1.client_addr, id2, info2.client_addr);
+
     }
     Ok(())
 }
