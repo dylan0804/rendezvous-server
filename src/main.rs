@@ -102,8 +102,8 @@ async fn pair_clients(socket: &UdpSocket, clients: &HashMap<String, ClientInfo>)
         let msg1_data = serde_json::to_vec(&msg1)?; 
         let msg2_data = serde_json::to_vec(&msg2)?; 
 
-        socket.send_to(&msg1_data, info2.client_addr).await?;
-        socket.send_to(&msg2_data, info1.client_addr).await?;
+        socket.send_to(&msg1_data, info1.client_addr).await?;
+        socket.send_to(&msg2_data, info2.client_addr).await?;
 
         println!("Paired {} ({}) with {} ({})", id1, info1.client_addr, id2, info2.client_addr);
 
