@@ -1,112 +1,109 @@
-use std::{collections::HashMap, net::SocketAddr, time::Instant};
+use libp2p::{
+    futures::StreamExt,
+    identify, identity,
+    multiaddr::Protocol,
+    noise, ping, relay,
+    swarm::{NetworkBehaviour, SwarmEvent},
+    tcp, yamux, Multiaddr,
+};
+use std::{error::Error, net::Ipv4Addr};
 
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
-use tokio::net::UdpSocket;
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Message {
-    msg_type: String,
-    client_id: String,
-    data: Option<String>
-}
-
-#[derive(Debug)]
-struct ClientInfo {
-    client_addr: SocketAddr,
-    timestamp: Instant
-}
+const PORT: u16 = 8123;
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    // bind an ip to udpsocket
-    let socket = UdpSocket::bind("0.0.0.0:8080")
-        .await?;
-    println!("Rendezvous server listening on 0.0.0.0:8080");
+async fn main() -> Result<(), Box<dyn Error>> {
+    // let _ = tracing_subscriber::fmt()
+    //     .with_env_filter(EnvFilter::from_default_env())
+    //     .try_init();
 
-    // create a hashmap of clients
+    // let opt = Opt::parse();
 
-    let mut clients = HashMap::<String, ClientInfo>::new();
-    // create buffer
-    let mut buf = [0; 1024];
-    
-    // loop
+    // Create a static known PeerId based on given secret
+    let local_key: identity::Keypair = generate_ed25519(123);
+
+    let mut swarm = libp2p::SwarmBuilder::with_existing_identity(local_key)
+        .with_tokio()
+        .with_tcp(
+            tcp::Config::default(),
+            noise::Config::new,
+            yamux::Config::default,
+        )?
+        .with_quic()
+        .with_behaviour(|key| Behaviour {
+            relay: relay::Behaviour::new(key.public().to_peer_id(), Default::default()),
+            ping: ping::Behaviour::new(ping::Config::new()),
+            identify: identify::Behaviour::new(identify::Config::new(
+                "/TODO/0.0.1".to_string(),
+                key.public(),
+            )),
+        })?
+        .build();
+
+    // Listen on all interfaces
+    let listen_addr_tcp = Multiaddr::empty()
+        // .with(match opt.use_ipv6 {
+        //     Some(true) => Protocol::from(Ipv6Addr::UNSPECIFIED),
+        //     _ => Protocol::from(Ipv4Addr::UNSPECIFIED),
+        // })
+        .with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+        .with(Protocol::Tcp(PORT));
+    swarm.listen_on(listen_addr_tcp)?;
+
+    let listen_addr_quic = Multiaddr::empty()
+        // .with(match opt.use_ipv6 {
+        //     Some(true) => Protocol::from(Ipv6Addr::UNSPECIFIED),
+        //     _ => Protocol::from(Ipv4Addr::UNSPECIFIED),
+        // })
+        .with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+        .with(Protocol::Udp(PORT))
+        .with(Protocol::QuicV1);
+    swarm.listen_on(listen_addr_quic)?;
+
     loop {
-        let (len, client_addr) = socket.recv_from(&mut buf)
-            .await?;
-
-        // get the data
-        let data = &buf[..len];
-
-        match serde_json::from_slice::<Message>(data) {
-            Ok(msg) => {
-                println!("Received from {}: {:?}", client_addr, msg);
-                println!("Message type: {}", msg.msg_type);
-                match msg.msg_type.as_str() {
-                    "register" => {
-                        clients.insert(msg.client_id.clone(), ClientInfo { 
-                            client_addr, 
-                            timestamp: Instant::now() 
-                        });
-
-                        let response = Message {
-                            msg_type: String::from("registered"),
-                            client_id: msg.client_id.clone(),
-                            data: Some(format!("Registered as {}", msg.client_id))
-                        };
-
-                        let response_data = serde_json::to_vec(&response)?;
-                        socket.send_to(&response_data, client_addr)
-                            .await?;
-
-                        if clients.len() >= 2 {
-                            println!("Have {} clients, attempting to pair...", clients.len());
-                            pair_clients(&socket, &clients)
-                                .await?;
-                        }
-                    },
-                    _ => {
-                        println!("Unknown message type: {}", msg.msg_type);
-                    }
+        match swarm.next().await.expect("Infinite Stream.") {
+            SwarmEvent::Behaviour(event) => {
+                if let BehaviourEvent::Identify(identify::Event::Received {
+                    info: identify::Info { observed_addr, .. },
+                    ..
+                }) = &event
+                {
+                    swarm.add_external_address(observed_addr.clone());
                 }
+
+                println!("{event:?}")
             }
-            Err(e) => {
-                println!("Failed to parse messagr from {}: {}", client_addr, e);
-                println!("Raw data {:?}", String::from_utf8_lossy(data));
+            SwarmEvent::NewListenAddr { address, .. } => {
+                println!("Listening on {address:?}");
             }
+            _ => {}
         }
-    }    
-    Ok(())
-}
-
-async fn pair_clients(socket: &UdpSocket, clients: &HashMap<String, ClientInfo>) -> Result<()> {
-    let client_list: Vec<_> = clients.iter().collect();
-
-    if client_list.len() >= 2 {
-        let (id1, info1) = client_list[0];
-        let (id2, info2) = client_list[1];
-
-        // tell client 1 about client 2
-        let msg1 = Message {
-            msg_type: String::from("peer_info"),
-            client_id: id2.to_string(),
-            data: Some(info2.client_addr.to_string())
-        };
-
-        let msg2 = Message {
-            msg_type: String::from("peer_info"),
-            client_id: id1.to_string(),
-            data: Some(info1.client_addr.to_string())
-        };
-
-        let msg1_data = serde_json::to_vec(&msg1)?; 
-        let msg2_data = serde_json::to_vec(&msg2)?; 
-
-        socket.send_to(&msg1_data, info1.client_addr).await?;
-        socket.send_to(&msg2_data, info2.client_addr).await?;
-
-        println!("Paired {} ({}) with {} ({})", id1, info1.client_addr, id2, info2.client_addr);
-
     }
-    Ok(())
 }
+
+#[derive(NetworkBehaviour)]
+struct Behaviour {
+    relay: relay::Behaviour,
+    ping: ping::Behaviour,
+    identify: identify::Behaviour,
+}
+
+fn generate_ed25519(secret_key_seed: u8) -> identity::Keypair {
+    let mut bytes = [0u8; 32];
+    bytes[0] = secret_key_seed;
+
+    identity::Keypair::ed25519_from_bytes(bytes).expect("only errors on wrong length")
+}
+
+// #[derive(Debug, Parser)]
+// #[command(name = "libp2p relay")]
+// struct Opt {
+//     /// Determine if the relay listen on ipv6 or ipv4 loopback address. the default is ipv4
+//     #[arg(long)]
+//     use_ipv6: Option<bool>,
+//
+//     /// Fixed value to generate deterministic peer id
+//     #[arg(long)]
+//     secret_key_seed: u8,
+//
+//     /// The port used to listen on all interfaces
+// }
