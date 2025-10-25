@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         //     Some(true) => Protocol::from(Ipv6Addr::UNSPECIFIED),
         //     _ => Protocol::from(Ipv4Addr::UNSPECIFIED),
         // })
-        .with(Protocol::from(Ipv4Addr::new(13, 211, 81, 120)))
+        .with(Protocol::from(Ipv4Addr::UNSPECIFIED))
         .with(Protocol::Tcp(PORT));
     swarm.listen_on(listen_addr_tcp)?;
 
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         //     Some(true) => Protocol::from(Ipv6Addr::UNSPECIFIED),
         //     _ => Protocol::from(Ipv4Addr::UNSPECIFIED),
         // })
-        .with(Protocol::from(Ipv4Addr::new(13, 211, 81, 120)))
+        .with(Protocol::from(Ipv4Addr::UNSPECIFIED))
         .with(Protocol::Udp(PORT))
         .with(Protocol::QuicV1);
     swarm.listen_on(listen_addr_quic)?;
