@@ -6,7 +6,7 @@ use libp2p::{
     swarm::{NetworkBehaviour, SwarmEvent},
     tcp, yamux, Multiaddr,
 };
-use std::{error::Error, net::Ipv4Addr};
+use std::{convert::identity, error::Error, net::Ipv4Addr};
 
 const PORT: u16 = 8123;
 
@@ -19,9 +19,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // let opt = Opt::parse();
 
     // Create a static known PeerId based on given secret
-    let local_key: identity::Keypair = generate_ed25519(123);
+    // let local_key: identity::Keypair = generate_ed25519(123);
+    let key = identity::Keypair::generate_ed25519();
 
-    let mut swarm = libp2p::SwarmBuilder::with_existing_identity(local_key)
+    let mut swarm = libp2p::SwarmBuilder::with_existing_identity(key)
         .with_tokio()
         .with_tcp(
             tcp::Config::default(),
