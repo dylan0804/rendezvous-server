@@ -1,12 +1,13 @@
 use libp2p::{
     futures::StreamExt,
-    identify, identity,
+    identify,
+    identity::{self, Keypair},
     multiaddr::Protocol,
     noise, ping, relay,
     swarm::{NetworkBehaviour, SwarmEvent},
     tcp, yamux, Multiaddr,
 };
-use std::{error::Error, net::Ipv4Addr};
+use std::{error::Error, fs, net::Ipv4Addr, path::Path};
 
 const PORT: u16 = 8123;
 
@@ -20,7 +21,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Create a static known PeerId based on given secret
     // let local_key: identity::Keypair = generate_ed25519(123);
-    let key = identity::Keypair::generate_ed25519();
+    let config_path = dirs::config_dir()
+        .unwrap_or_else(|| ".".into())
+        .join("meshdrop/relay.key");
+    let key = load_or_generate_key(&config_path)?;
     println!("Peer id {}", key.public().to_peer_id());
 
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(key)
@@ -89,12 +93,42 @@ struct Behaviour {
     identify: identify::Behaviour,
 }
 
-fn generate_ed25519(secret_key_seed: u8) -> identity::Keypair {
-    let mut bytes = [0u8; 32];
-    bytes[0] = secret_key_seed;
+fn load_or_generate_key(config_path: &Path) -> Result<Keypair, Box<dyn Error>> {
+    if config_path.exists() {
+        let bytes = fs::read(config_path)?;
+        let key = identity::Keypair::from_protobuf_encoding(&bytes)?;
+        Ok(key)
+    } else {
+        let key = identity::Keypair::generate_ed25519();
+        let bytes = key.to_protobuf_encoding()?;
 
-    identity::Keypair::ed25519_from_bytes(bytes).expect("only errors on wrong length")
+        if let Some(prefix) = config_path.parent() {
+            std::fs::create_dir_all(prefix)?;
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut f = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(config_path)?;
+
+            use std::io::Write;
+            f.write_all(&bytes)?
+        }
+
+        Ok(key)
+    }
 }
+
+// fn generate_ed25519(secret_key_seed: u8) -> identity::Keypair {
+//     let mut bytes = [0u8; 32];
+//     bytes[0] = secret_key_seed;
+//
+//     identity::Keypair::ed25519_from_bytes(bytes).expect("only errors on wrong length")
+// }
 
 // #[derive(Debug, Parser)]
 // #[command(name = "libp2p relay")]
