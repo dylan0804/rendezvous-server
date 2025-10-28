@@ -4,12 +4,12 @@ use libp2p::{
     identity::{self, Keypair},
     multiaddr::Protocol,
     noise, ping, relay,
-    swarm::{NetworkBehaviour, SwarmEvent},
+    swarm::{dial_opts::WithPeerId, NetworkBehaviour, SwarmEvent},
     tcp, yamux, Multiaddr,
 };
 use std::{error::Error, fs, net::Ipv4Addr, path::Path};
 
-const PORT: u16 = 443;
+const PORT: u16 = 8443;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
