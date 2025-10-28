@@ -9,7 +9,7 @@ use libp2p::{
 };
 use std::{error::Error, fs, net::Ipv4Addr, path::Path};
 
-const PORT: u16 = 4001;
+const PORT: u16 = 443;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
